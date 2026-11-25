@@ -56,7 +56,7 @@ def main():
 
     if a.holdout_start:
         hold = prices.loc[a.holdout_start:]
-        print(f"\nOut of sample, {hold.index[0].date()} → {hold.index[-1].date()} (weights fixed):")
+        print(f"\nOut of sample, {hold.index[0].date()} to {hold.index[-1].date()} (weights fixed):")
         print(pd.DataFrame({k: realised(hold, w, a.rf) for k, w in ports.items()}).round(4).to_string())
 
     if a.chart:

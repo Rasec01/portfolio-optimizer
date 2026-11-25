@@ -15,7 +15,7 @@ def load_prices(tickers: Sequence[str], start: str = "2010-01-01", csv: Optional
 
         prices = yf.download(list(tickers), start=start, auto_adjust=True, progress=False)["Close"]
     prices = prices.dropna(how="any").sort_index()
-    print(f"[data] {prices.shape[1]} assets, {len(prices)} days, {prices.index[0].date()} → {prices.index[-1].date()}")
+    print(f"[data] {prices.shape[1]} assets, {len(prices)} days, {prices.index[0].date()} to {prices.index[-1].date()}")
     return prices
 
 

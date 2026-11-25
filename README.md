@@ -30,7 +30,26 @@ Mean-variance weights are very sensitive to estimation error: small changes in e
 
 ## Results
 
-Run `python main.py --max-weight 0.4 --holdout-start 2021-01-01 --chart outputs/frontier.png` and paste the tables and chart here.
+Six ETFs (SPY, EFA, EEM, AGG, GLD, VNQ), a 40% cap per asset and Ledoit-Wolf shrinkage. Weights are estimated on January 2010 to December 2020 and then held fixed from January 2021 to November 2026. The risk-free rate is set at 2%.
+
+| Weights | Max Sharpe | Min variance | Equal weight |
+|---|---|---|---|
+| AGG (US bonds) | 40.0% | 40.0% | 16.7% |
+| SPY (US equities) | 40.0% | 29.4% | 16.7% |
+| GLD (gold) | 19.8% | 30.6% | 16.7% |
+| VNQ (real estate) | 0.2% | 0% | 16.7% |
+| EFA, EEM (other equities) | 0% | 0% | 33.3% |
+
+| Sharpe ratio | Max Sharpe | Min variance | Equal weight |
+|---|---|---|---|
+| Estimated, 2010-2020 | 0.82 | 0.74 | 0.49 |
+| Realised, 2021-2026 | 0.59 | 0.56 | 0.44 |
+| Realised return, 2021-2026 | 7.5% | 7.2% | 7.3% |
+| Realised volatility, 2021-2026 | 9.3% | 9.3% | 12.0% |
+
+Both optimised portfolios beat equal weight out of sample, but only by taking less risk: their returns were about the same. For the two optimised portfolios, the estimated Sharpe ratios overstated what happened by about 0.2, which is estimation error showing up in practice. The 40% cap binds on bonds in both portfolios and on US equities in the max-Sharpe one, so it is doing real work. This is one five-year test period, and it includes 2022, when bonds and equities fell together.
+
+![Efficient frontier](docs/frontier.png)
 
 ## Tests
 
