@@ -1,73 +1,85 @@
 """
-Financial Market Prediction & Backtesting System
-=================================================
-Entry point — runs the full pipeline end-to-end.
+Mean-variance portfolio optimiser.
 
-Usage
------
     python main.py
-    python main.py --ticker QQQ --start 2018-01-01 --plot
+    python main.py --tickers SPY EFA EEM AGG GLD --max-weight 0.4 --chart outputs/frontier.png
+    python main.py --holdout-start 2021-01-01     # estimate before, evaluate after
+    python main.py --csv data/prices.csv          # Date + one column per asset
 """
-
 import argparse
-import os
+from pathlib import Path
 
-from src.data_loader import download_data
-from src.features import create_features
-from src.model import train_model
-from src.signals import generate_signals
-from src.backtest import backtest, plot_results
+import numpy as np
+import pandas as pd
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Market Prediction & Backtesting System")
-    parser.add_argument("--ticker", default="SPY", help="Ticker symbol (default: SPY)")
-    parser.add_argument("--start", default="2015-01-01", help="Start date YYYY-MM-DD")
-    parser.add_argument("--horizon", type=int, default=5, help="Forward-return horizon in trading days")
-    parser.add_argument("--threshold", type=float, default=0.0, help="Signal threshold")
-    parser.add_argument("--plot", action="store_true", help="Show cumulative-return chart")
-    parser.add_argument("--save-chart", default=None, help="Save chart to this file path")
-    return parser.parse_args()
+from src.data import TRADING_DAYS, estimate, load_prices
+from src.optimize import efficient_frontier, max_sharpe, min_variance, stats
 
 
-def main() -> None:
-    args = parse_args()
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--tickers", nargs="+", default=["SPY", "EFA", "EEM", "AGG", "GLD", "VNQ"])
+    p.add_argument("--start", default="2010-01-01")
+    p.add_argument("--csv", default=None)
+    p.add_argument("--rf", type=float, default=0.02, help="annual risk-free rate for the Sharpe ratio")
+    p.add_argument("--max-weight", type=float, default=1.0, help="cap on any single asset")
+    p.add_argument("--no-shrink", action="store_true", help="use the sample covariance")
+    p.add_argument("--holdout-start", default=None, help="estimate before this date, evaluate from it")
+    p.add_argument("--chart", default=None, help="save the efficient frontier to this file")
+    return p.parse_args()
 
-    print("\n========================================")
-    print(" Market Prediction & Backtesting System ")
-    print("========================================\n")
 
-    # 1. Data
-    df = download_data(ticker=args.ticker, start=args.start)
+def realised(prices: pd.DataFrame, w: pd.Series, rf: float) -> dict:
+    """Performance of fixed weights, rebalanced daily, over the given prices."""
+    daily = prices.pct_change().dropna() @ w
+    ann_ret = (1 + daily).prod() ** (TRADING_DAYS / len(daily)) - 1
+    ann_vol = daily.std() * np.sqrt(TRADING_DAYS)
+    return {"return": ann_ret, "volatility": ann_vol, "sharpe": (ann_ret - rf) / ann_vol}
 
-    # 2. Features
-    df = create_features(df, horizon=args.horizon)
 
-    # 3. Model
-    model, metrics = train_model(df)
-    print(f"\nModel R²  : {metrics['r2']}")
-    print(f"Model RMSE: {metrics['rmse']}")
+def main():
+    a = parse_args()
+    prices = load_prices(a.tickers, a.start, a.csv)
+    est = prices if a.holdout_start is None else prices.loc[: a.holdout_start].iloc[:-1]
+    mu, cov = estimate(est, shrink=not a.no_shrink)
 
-    # 4. Signals
-    df = generate_signals(df, model, threshold=args.threshold)
+    ports = {
+        "Max Sharpe": max_sharpe(mu, cov, a.rf, a.max_weight),
+        "Min variance": min_variance(mu, cov, a.max_weight),
+        "Equal weight": pd.Series(1 / len(mu), index=mu.index),
+    }
+    print("\nWeights:")
+    print(pd.DataFrame(ports).round(3).to_string())
 
-    # 5. Backtest
-    strategy, market = backtest(df)
+    print("\nIn-sample (estimated) statistics:")
+    print(pd.DataFrame({k: stats(w, mu, cov, a.rf) for k, w in ports.items()}).round(4).to_string())
 
-    # 6. Optional chart
-    if args.plot or args.save_chart:
-        save_path = args.save_chart or os.path.join("data", f"{args.ticker}_backtest.png")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plot_results(
-            strategy,
-            market,
-            title=f"{args.ticker} — ML Strategy vs Buy & Hold",
-            save_path=save_path if args.save_chart else None,
-        )
-        if args.plot and not args.save_chart:
-            plot_results(strategy, market, title=f"{args.ticker} — ML Strategy vs Buy & Hold")
+    if a.holdout_start:
+        hold = prices.loc[a.holdout_start:]
+        print(f"\nOut of sample, {hold.index[0].date()} → {hold.index[-1].date()} (weights fixed):")
+        print(pd.DataFrame({k: realised(hold, w, a.rf) for k, w in ports.items()}).round(4).to_string())
 
-    print("\nPipeline complete ✓")
+    if a.chart:
+        import matplotlib.pyplot as plt
+
+        fr = efficient_frontier(mu, cov, max_weight=a.max_weight)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(fr["volatility"], fr["return"], label="Efficient frontier")
+        for k, w in ports.items():
+            s = stats(w, mu, cov, a.rf)
+            ax.scatter(s["volatility"], s["return"], zorder=3, label=k)
+        vols = np.sqrt(np.diag(cov))
+        ax.scatter(vols, mu, marker="x", color="grey", label="Single assets")
+        for t, x, y in zip(mu.index, vols, mu):
+            ax.annotate(t, (x, y), fontsize=8, xytext=(3, 3), textcoords="offset points")
+        ax.set_xlabel("Annual volatility")
+        ax.set_ylabel("Annual expected return")
+        ax.legend()
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        Path(a.chart).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(a.chart, dpi=150)
+        print(f"\nChart saved to {a.chart}")
 
 
 if __name__ == "__main__":
