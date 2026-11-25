@@ -2,7 +2,7 @@
 
 Mean-variance portfolio optimisation (Markowitz, 1952) for a set of ETFs or stocks: the minimum-variance portfolio, the maximum-Sharpe portfolio and the efficient frontier, with long-only weights and an optional cap per asset.
 
-It also answers the question that usually gets skipped: **do the optimised weights still look good on data they were not estimated on?** With `--holdout-start`, weights are estimated on the earlier period and then held fixed through the later one, next to an equal-weight portfolio.
+It also answers the question that usually gets skipped: **do the optimised weights still look good on data they were not estimated on?** With `--holdout-start`, weights are estimated on the earlier period and then held fixed through the later one, next to an equal-weight portfolio.   
 
 ## What it does
 
