@@ -1,123 +1,62 @@
-# Financial Market Prediction & Backtesting System
+# Portfolio Optimizer
 
-A modular Python pipeline that downloads historical price data, engineers technical features, trains a Random Forest regressor to predict forward returns, converts predictions into long/short signals, and runs a vectorised backtest.
+Mean-variance portfolio optimisation (Markowitz, 1952) for a set of ETFs or stocks: the minimum-variance portfolio, the maximum-Sharpe portfolio and the efficient frontier, with long-only weights and an optional cap per asset.
 
----
+It also answers the question that usually gets skipped: **do the optimised weights still look good on data they were not estimated on?** With `--holdout-start`, weights are estimated on the earlier period and then held fixed through the later one, next to an equal-weight portfolio.
 
-## Quickstart
+## What it does
 
-```bash
-# 1. Clone / unzip the project
-cd market-prediction-system
-
-# 2. Create a virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Run the full pipeline (SPY, 2015-present)
-python main.py
-
-# 5. Optional flags
-python main.py --ticker QQQ --start 2018-01-01 --plot
-python main.py --ticker AAPL --plot --save-chart data/aapl_backtest.png
-```
-
----
-
-## CLI Arguments
-
-| Flag | Default | Description |
-|---|---|---|
-| `--ticker` | `SPY` | Ticker symbol to download |
-| `--start` | `2015-01-01` | History start date (YYYY-MM-DD) |
-| `--horizon` | `5` | Forward-return target in trading days |
-| `--threshold` | `0.0` | Minimum predicted return to go long |
-| `--plot` | off | Show cumulative-return chart |
-| `--save-chart` | `None` | Save chart to given path |
-
----
-
-## Project Structure
-
-```
-market-prediction-system/
-│
-├── data/                      # Output directory (charts, cached data)
-├── notebooks/
-│   └── exploration.ipynb      # Interactive walkthrough
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py         # yfinance download + validation
-│   ├── features.py            # Technical indicator engineering
-│   ├── model.py               # Random Forest training + metrics
-│   ├── signals.py             # Convert predictions → long/short signals
-│   └── backtest.py            # Vectorised P&L + performance stats + chart
-├── main.py                    # CLI entry point
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Pipeline Overview
-
-```
-download_data()
-      │
-      ▼
-create_features()   ←  returns, MAs, MA ratio, volatility, target
-      │
-      ▼
-train_model()       ←  Random Forest, time-series train/test split
-      │
-      ▼
-generate_signals()  ←  prediction > threshold → long, else short
-      │
-      ▼
-backtest()          ←  lagged signal × daily return, cumulative P&L
-```
-
-### Features
-
-| Column | Description |
+| Piece | Detail |
 |---|---|
-| `return` | Daily percentage change |
-| `ma10` | 10-day simple moving average |
-| `ma30` | 30-day simple moving average |
-| `ma_ratio` | `ma10 / ma30` — momentum proxy |
-| `volatility` | 10-day rolling std of daily returns |
-| `target` | Forward return over `--horizon` days (label) |
+| Inputs | Daily prices from yfinance, or a CSV with a `Date` column and one column per asset |
+| Estimates | Annualised mean returns; covariance with Ledoit-Wolf shrinkage (or the sample covariance with `--no-shrink`) |
+| Portfolios | Minimum variance, maximum Sharpe, any target return; equal weight as the benchmark |
+| Constraints | Weights sum to one, no short positions, optional cap per asset (`--max-weight`) |
+| Solver | SciPy SLSQP |
+| Output | Weights, in-sample statistics, optional out-of-sample statistics, efficient-frontier chart |
 
-### Backtest assumptions
-
-- Signals are **lagged by one day** to prevent look-ahead bias.
-- Costs (slippage, commission) are **not modelled** — results are indicative only.
-- Short signals represent a short position, not staying flat.
-
----
-
-## Notebook
-
-Open `notebooks/exploration.ipynb` for an interactive walkthrough including correlation heatmaps and feature-importance charts:
+## Quick start
 
 ```bash
-jupyter notebook notebooks/exploration.ipynb
+pip install -r requirements.txt
+python main.py                                         # SPY EFA EEM AGG GLD VNQ since 2010
+python main.py --max-weight 0.4 --chart outputs/frontier.png
+python main.py --holdout-start 2021-01-01              # estimate before 2021, test after
 ```
 
----
+## Why shrinkage and a weight cap
 
-## Extending the System
+Mean-variance weights are very sensitive to estimation error: small changes in expected returns swing the maximum-Sharpe portfolio into one or two assets. Shrinking the covariance and capping weights make the result steadier. Expected returns stay the weakest input, which is why the minimum-variance portfolio, which ignores them, often holds up better out of sample. The holdout option lets you check this on real data.
 
-- **More features**: add RSI, Bollinger Bands, volume ratios in `src/features.py`
-- **Different models**: swap `RandomForestRegressor` in `src/model.py` for XGBoost, LSTM, etc.
-- **Transaction costs**: subtract a per-trade cost in `src/backtest.py`
-- **Position sizing**: replace binary ±1 signals with Kelly-sized positions
+## Results
 
----
+Run `python main.py --max-weight 0.4 --holdout-start 2021-01-01 --chart outputs/frontier.png` and paste the tables and chart here.
+
+## Tests
+
+```bash
+pytest -q
+```
+
+The tests check the minimum-variance weights against the closed-form two-asset solution, that weights are long-only, sum to one and respect the cap, that the maximum-Sharpe portfolio beats every point on the frontier, and that the frontier's risk rises with its return.
+
+An interactive three-asset version runs in the browser at [cesarglez.com](https://cesarglez.com/#optimizer).
+
+## Project structure
+
+```
+├── main.py
+├── src/
+│   ├── data.py        # yfinance or CSV
+│   ├── estimates.py   # annualised mean and (shrunk) covariance
+│   └── optimize.py    # min variance, max Sharpe, target return, frontier
+└── tests/test_optimize.py
+```
 
 ## Disclaimer
 
-This project is for **educational purposes only**. Past backtest performance does not guarantee future results. Do not use this system for live trading without independent validation and risk management.
+For research and education only. Not investment advice.
+
+## License
+
+MIT
